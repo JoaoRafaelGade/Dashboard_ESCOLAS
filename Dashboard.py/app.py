@@ -10,6 +10,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 import os
+import time
+import requests
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -533,6 +535,50 @@ with st.sidebar:
         ],
         label_visibility="visible"
     )
+
+    st.markdown("<hr style='border-color:rgba(255,255,255,.15);margin:12px 0'>", unsafe_allow_html=True)
+
+    # ── Botão de sincronização ───────────────────────────────
+    st.markdown("""
+    <div style="font-size:.75rem;font-weight:600;opacity:.85;margin-bottom:6px;text-align:center">
+      🔄 Sincronização de Dados
+    </div>
+    """, unsafe_allow_html=True)
+
+    DEFAULT_APPS_SCRIPT_URL   = "https://script.google.com/macros/s/AKfycbwaKfFbLRLUCQyHSiws2jX43FKw3j2xRmxKcWns3q950dP3_VZsTvUg-oYbAtWUlpWe/exec"
+    DEFAULT_APPS_SCRIPT_TOKEN = "edu-pb-sync-2026-secretaria"
+
+    if st.button("⚡ Sincronizar Agora", use_container_width=True):
+        try:
+            try:
+                script_url   = st.secrets.get("APPS_SCRIPT_URL", DEFAULT_APPS_SCRIPT_URL)
+                script_token = st.secrets.get("APPS_SCRIPT_TOKEN", DEFAULT_APPS_SCRIPT_TOKEN)
+            except Exception:
+                script_url   = DEFAULT_APPS_SCRIPT_URL
+                script_token = DEFAULT_APPS_SCRIPT_TOKEN
+
+            with st.spinner("Enviando dados da planilha para o GitHub…"):
+                resp = requests.get(
+                    script_url,
+                    params={"token": script_token},
+                    timeout=60
+                )
+            resultado = resp.json()
+            if resultado.get("status") == "ok":
+                st.success("✅ Sincronizado! O dashboard será recarregado em instantes.")
+                st.cache_data.clear()
+                time.sleep(2)
+                st.rerun()
+            else:
+                st.error(f"Erro: {resultado.get('mensagem')}")
+        except Exception as e:
+            st.error(f"Falha: {e}")
+
+    st.markdown("""
+    <div style="font-size:.68rem;opacity:.5;text-align:center;padding:4px 0;margin-top:4px">
+      Atualiza os CSVs direto do Google Sheets
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("<hr style='border-color:rgba(255,255,255,.15);margin:12px 0'>", unsafe_allow_html=True)
     st.markdown("""
