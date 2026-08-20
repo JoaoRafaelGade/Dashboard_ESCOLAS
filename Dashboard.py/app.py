@@ -326,6 +326,12 @@ def load_all():
                 df = df.rename(columns={col: "TOTAL"})
             elif u in ["GERENCIA", "GERÊNCIA", "GERENCIA REGIONAL", "GRE REGIONAL", "REGIONAL DE ENSINO"]:
                 df = df.rename(columns={col: "GRE"})
+            elif u in ["ENSINO FUNDAMENTAL (ANOS INICIAIS)", "ANOS INICIAIS", "EF (ANOS INICIAIS)", "EF ANOS INICIAIS", "FUNDAMENTAL ANOS INICIAIS"]:
+                df = df.rename(columns={col: "ENSINO FUNDAMENTAL (ANOS INICIAIS)"})
+            elif u in ["ENSINO FUNDAMENTAL (ANOS FINAIS)", "ANOS FINAIS", "EF (ANOS FINAIS)", "EF ANOS FINAIS", "FUNDAMENTAL ANOS FINAIS"]:
+                df = df.rename(columns={col: "ENSINO FUNDAMENTAL (ANOS FINAIS)"})
+            elif u in ["ENSINO MÉDIO", "ENSINO MEDIO", "EM", "MÉDIO", "MEDIO"]:
+                df = df.rename(columns={col: "ENSINO MÉDIO"})
         return df
 
     # ── Escolas principal ────────────────────────────────────
@@ -945,10 +951,10 @@ elif pagina.startswith("📚"):
     if f_mun:  df_m = df_m[df_m["MUNICIPIO"].isin(f_mun)]
     if f_tipo: df_m = df_m[df_m["TIPO"].isin(f_tipo)]
 
-    total_m = df_m["TOTAL"].sum()
-    ai_m = df_m["ENSINO FUNDAMENTAL (ANOS INICIAIS)"].sum()
-    af_m = df_m["ENSINO FUNDAMENTAL (ANOS FINAIS)"].sum()
-    em_m = df_m["ENSINO MÉDIO"].sum()
+    total_m = df_m["TOTAL"].sum() if "TOTAL" in df_m.columns else 0
+    ai_m = df_m["ENSINO FUNDAMENTAL (ANOS INICIAIS)"].sum() if "ENSINO FUNDAMENTAL (ANOS INICIAIS)" in df_m.columns else 0
+    af_m = df_m["ENSINO FUNDAMENTAL (ANOS FINAIS)"].sum() if "ENSINO FUNDAMENTAL (ANOS FINAIS)" in df_m.columns else 0
+    em_m = df_m["ENSINO MÉDIO"].sum() if "ENSINO MÉDIO" in df_m.columns else 0
 
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1: kpi("Total Matrículas", fmt_num(total_m), "na seleção atual", icon="👩‍🎓")
@@ -966,64 +972,87 @@ elif pagina.startswith("📚"):
     with tab1:
         col_l, col_r = st.columns(2)
         with col_l:
-            gre_mat = df_m.groupby("GRE").agg(
-                AI=("ENSINO FUNDAMENTAL (ANOS INICIAIS)", "sum"),
-                AF=("ENSINO FUNDAMENTAL (ANOS FINAIS)", "sum"),
-                EM=("ENSINO MÉDIO", "sum"),
-            ).reset_index()
-            gre_mat["Total"] = gre_mat["AI"] + gre_mat["AF"] + gre_mat["EM"]
-            gre_mat = gre_mat.sort_values("Total", ascending=True)
-            gre_long = gre_mat.melt(
-                id_vars="GRE", value_vars=["AI","AF","EM"],
-                var_name="Segmento", value_name="Matrículas"
-            )
-            gre_long["Segmento"] = gre_long["Segmento"].map(
-                {"AI":"Anos Iniciais","AF":"Anos Finais","EM":"Ensino Médio"}
-            )
-            fig = px.bar(
-                gre_long, x="Matrículas", y="GRE", color="Segmento",
-                orientation="h", barmode="stack",
-                color_discrete_map={"Anos Iniciais": AZUL2,"Anos Finais": AZUL,"Ensino Médio": AMARELO},
-                title="Matrículas por GRE e Segmento",
-            )
-            fig.update_traces(marker_line_width=0)
-            plotly_defaults(fig, 520)
-            st.plotly_chart(fig, use_container_width=True)
+            if "GRE" in df_m.columns and len(df_m) > 0:
+                agg_dict = {}
+                for col, seg_name in [("ENSINO FUNDAMENTAL (ANOS INICIAIS)", "AI"),
+                                      ("ENSINO FUNDAMENTAL (ANOS FINAIS)", "AF"),
+                                      ("ENSINO MÉDIO", "EM")]:
+                    if col in df_m.columns:
+                        agg_dict[seg_name] = (col, "sum")
+                
+                if agg_dict:
+                    gre_mat = df_m.groupby("GRE").agg(**agg_dict).reset_index()
+                    present_segs = [s for s in ["AI", "AF", "EM"] if s in gre_mat.columns]
+                    gre_mat["Total"] = gre_mat[present_segs].sum(axis=1)
+                    gre_mat = gre_mat.sort_values("Total", ascending=True)
+                    gre_long = gre_mat.melt(
+                        id_vars="GRE", value_vars=present_segs,
+                        var_name="Segmento", value_name="Matrículas"
+                    )
+                    gre_long["Segmento"] = gre_long["Segmento"].map(
+                        {"AI":"Anos Iniciais","AF":"Anos Finais","EM":"Ensino Médio"}
+                    )
+                    fig = px.bar(
+                        gre_long, x="Matrículas", y="GRE", color="Segmento",
+                        orientation="h", barmode="stack",
+                        color_discrete_map={"Anos Iniciais": AZUL2,"Anos Finais": AZUL,"Ensino Médio": AMARELO},
+                        title="Matrículas por GRE e Segmento",
+                    )
+                    fig.update_traces(marker_line_width=0)
+                    plotly_defaults(fig, 520)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Dados de segmento indisponíveis.")
+            else:
+                st.info("Dados por GRE indisponíveis para a seleção atual.")
 
         with col_r:
-            mun_mat = df_m.groupby("MUNICIPIO")["TOTAL"].sum().reset_index()
-            mun_mat = mun_mat.sort_values("TOTAL", ascending=False).head(20)
-            fig2 = px.bar(
-                mun_mat.sort_values("TOTAL"),
-                x="TOTAL", y="MUNICIPIO", orientation="h",
-                color="TOTAL",
-                color_continuous_scale=[[0,"#c8ddf5"],[1,AZUL]],
-                text="TOTAL",
-                title="Top 20 Municípios por Matrículas",
-            )
-            fig2.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
-            fig2.update_coloraxes(showscale=False)
-            plotly_defaults(fig2, 520)
-            st.plotly_chart(fig2, use_container_width=True)
+            if "MUNICIPIO" in df_m.columns and "TOTAL" in df_m.columns and len(df_m) > 0:
+                mun_mat = df_m.groupby("MUNICIPIO")["TOTAL"].sum().reset_index()
+                mun_mat = mun_mat.sort_values("TOTAL", ascending=False).head(20)
+                fig2 = px.bar(
+                    mun_mat.sort_values("TOTAL"),
+                    x="TOTAL", y="MUNICIPIO", orientation="h",
+                    color="TOTAL",
+                    color_continuous_scale=[[0,"#c8ddf5"],[1,AZUL]],
+                    text="TOTAL",
+                    title="Top 20 Municípios por Matrículas",
+                )
+                fig2.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+                fig2.update_coloraxes(showscale=False)
+                plotly_defaults(fig2, 520)
+                st.plotly_chart(fig2, use_container_width=True)
+            else:
+                st.info("Dados por município indisponíveis.")
 
     with tab2:
         top_n = st.slider("Exibir top N escolas", 10, 50, 25, key="top_esc_mat")
-        df_top = df_m[["NOME_ESCOLA","GRE","MUNICIPIO","TIPO","TOTAL",
+        cols_top_all = ["NOME_ESCOLA","GRE","MUNICIPIO","TIPO","TOTAL",
                         "ENSINO FUNDAMENTAL (ANOS INICIAIS)",
-                        "ENSINO FUNDAMENTAL (ANOS FINAIS)","ENSINO MÉDIO"]].copy()
-        df_top = df_top.dropna(subset=["TOTAL"]).sort_values("TOTAL", ascending=False).head(top_n)
-        df_top.columns = ["Escola","GRE","Município","Tipo","Total","An. Iniciais","An. Finais","Ens. Médio"]
-        fig3 = px.bar(
-            df_top.sort_values("Total"),
-            x="Total", y="Escola", orientation="h",
-            color="GRE",
-            color_discrete_sequence=QUAL_COLORS,
-            text="Total",
-            title=f"Top {top_n} escolas por total de matrículas",
-        )
-        fig3.update_traces(textposition="outside", marker_line_width=0)
-        plotly_defaults(fig3, max(400, top_n * 22))
-        st.plotly_chart(fig3, use_container_width=True)
+                        "ENSINO FUNDAMENTAL (ANOS FINAIS)","ENSINO MÉDIO"]
+        cols_top = [c for c in cols_top_all if c in df_m.columns]
+        df_top = df_m[cols_top].copy()
+        if "TOTAL" in df_top.columns and len(df_top) > 0:
+            df_top = df_top.dropna(subset=["TOTAL"]).sort_values("TOTAL", ascending=False).head(top_n)
+            col_rename_map = {
+                "NOME_ESCOLA": "Escola", "GRE": "GRE", "MUNICIPIO": "Município", "TIPO": "Tipo",
+                "TOTAL": "Total", "ENSINO FUNDAMENTAL (ANOS INICIAIS)": "An. Iniciais",
+                "ENSINO FUNDAMENTAL (ANOS FINAIS)": "An. Finais", "ENSINO MÉDIO": "Ens. Médio"
+            }
+            df_top = df_top.rename(columns=col_rename_map)
+            fig3 = px.bar(
+                df_top.sort_values("Total"),
+                x="Total", y="Escola" if "Escola" in df_top.columns else df_top.index, orientation="h",
+                color="GRE" if "GRE" in df_top.columns else None,
+                color_discrete_sequence=QUAL_COLORS,
+                text="Total",
+                title=f"Top {top_n} escolas por total de matrículas",
+            )
+            fig3.update_traces(textposition="outside", marker_line_width=0)
+            plotly_defaults(fig3, max(400, top_n * 22))
+            st.plotly_chart(fig3, use_container_width=True)
+        else:
+            st.info("Dados de escolas por matrículas indisponíveis.")
 
     with tab3:
         series_cols = ["1º ANO","2º ANO","3º ANO","4º ANO","5º ANO",
@@ -1033,51 +1062,62 @@ elif pagina.startswith("📚"):
         for col in series_cols:
             if col in df_m.columns:
                 series_sums.append({"Série": col, "Matrículas": df_m[col].sum()})
-        df_series = pd.DataFrame(series_sums).dropna()
+        df_series = pd.DataFrame(series_sums).dropna() if series_sums else pd.DataFrame()
 
-        c_bar, c_pie = st.columns(2)
-        with c_bar:
-            fig4 = px.bar(
-                df_series, x="Série", y="Matrículas",
-                color="Matrículas",
-                color_continuous_scale=[[0,"#c8ddf5"],[1,AZUL]],
-                text="Matrículas",
-                title="Matrículas por série",
-            )
-            fig4.update_traces(
-                texttemplate="%{text:,.0f}", textposition="outside",
-                marker_line_width=0
-            )
-            fig4.update_coloraxes(showscale=False)
-            plotly_defaults(fig4, 380)
-            st.plotly_chart(fig4, use_container_width=True)
+        if not df_series.empty and "Série" in df_series.columns and "Matrículas" in df_series.columns:
+            c_bar, c_pie = st.columns(2)
+            with c_bar:
+                fig4 = px.bar(
+                    df_series, x="Série", y="Matrículas",
+                    color="Matrículas",
+                    color_continuous_scale=[[0,"#c8ddf5"],[1,AZUL]],
+                    text="Matrículas",
+                    title="Matrículas por série",
+                )
+                fig4.update_traces(
+                    texttemplate="%{text:,.0f}", textposition="outside",
+                    marker_line_width=0
+                )
+                fig4.update_coloraxes(showscale=False)
+                plotly_defaults(fig4, 380)
+                st.plotly_chart(fig4, use_container_width=True)
 
-        with c_pie:
-            segmentos = {
-                "Anos Iniciais (1-5)": df_series[df_series["Série"].str.contains("ANO")
-                    & df_series["Série"].str.extract(r"(\d+)")[0].astype(float).le(5)]["Matrículas"].sum(),
-                "Anos Finais (6-9)": df_series[df_series["Série"].str.contains("ANO")
-                    & df_series["Série"].str.extract(r"(\d+)")[0].astype(float).ge(6)]["Matrículas"].sum(),
-                "Ensino Médio (1-3ª)": df_series[df_series["Série"].str.contains("SÉRIE")]["Matrículas"].sum(),
-            }
-            df_seg = pd.DataFrame(list(segmentos.items()), columns=["Segmento","Matrículas"])
-            fig5 = px.pie(
-                df_seg, values="Matrículas", names="Segmento",
-                color_discrete_sequence=[AZUL2, AZUL, AMARELO],
-                hole=0.55,
-                title="Proporção por segmento",
-            )
-            fig5.update_traces(textposition="outside", textinfo="percent+label")
-            plotly_defaults(fig5, 380)
-            st.plotly_chart(fig5, use_container_width=True)
+            with c_pie:
+                segmentos = {
+                    "Anos Iniciais (1-5)": df_series[df_series["Série"].str.contains("ANO", na=False)
+                        & df_series["Série"].str.extract(r"(\d+)")[0].astype(float).le(5)]["Matrículas"].sum(),
+                    "Anos Finais (6-9)": df_series[df_series["Série"].str.contains("ANO", na=False)
+                        & df_series["Série"].str.extract(r"(\d+)")[0].astype(float).ge(6)]["Matrículas"].sum(),
+                    "Ensino Médio (1-3ª)": df_series[df_series["Série"].str.contains("SÉRIE", na=False)]["Matrículas"].sum(),
+                }
+                df_seg = pd.DataFrame(list(segmentos.items()), columns=["Segmento","Matrículas"])
+                fig5 = px.pie(
+                    df_seg, values="Matrículas", names="Segmento",
+                    color_discrete_sequence=[AZUL2, AZUL, AMARELO],
+                    hole=0.55,
+                    title="Proporção por segmento",
+                )
+                fig5.update_traces(textposition="outside", textinfo="percent+label")
+                plotly_defaults(fig5, 380)
+                st.plotly_chart(fig5, use_container_width=True)
+        else:
+            st.info("Dados por série indisponíveis para os filtros atuais.")
 
     with tab4:
         section("📄 Dados de Matrículas — Tabela Completa")
-        df_show = df_m[["NOME_ESCOLA","GRE","MUNICIPIO","TIPO","TOTAL",
+        cols_show_all = ["NOME_ESCOLA","GRE","MUNICIPIO","TIPO","TOTAL",
                          "ENSINO FUNDAMENTAL (ANOS INICIAIS)",
-                         "ENSINO FUNDAMENTAL (ANOS FINAIS)","ENSINO MÉDIO"]].copy()
-        df_show.columns = ["Escola","GRE","Município","Tipo","Total","Anos Iniciais","Anos Finais","Ensino Médio"]
-        df_show = df_show.dropna(subset=["Total"]).sort_values("Total", ascending=False)
+                         "ENSINO FUNDAMENTAL (ANOS FINAIS)","ENSINO MÉDIO"]
+        cols_show = [c for c in cols_show_all if c in df_m.columns]
+        df_show = df_m[cols_show].copy()
+        col_rename_map = {
+            "NOME_ESCOLA": "Escola", "GRE": "GRE", "MUNICIPIO": "Município", "TIPO": "Tipo",
+            "TOTAL": "Total", "ENSINO FUNDAMENTAL (ANOS INICIAIS)": "Anos Iniciais",
+            "ENSINO FUNDAMENTAL (ANOS FINAIS)": "Anos Finais", "ENSINO MÉDIO": "Ensino Médio"
+        }
+        df_show = df_show.rename(columns=col_rename_map)
+        if "Total" in df_show.columns:
+            df_show = df_show.dropna(subset=["Total"]).sort_values("Total", ascending=False)
         st.dataframe(
             df_show.reset_index(drop=True),
             use_container_width=True, height=420
