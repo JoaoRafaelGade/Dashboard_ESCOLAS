@@ -316,11 +316,17 @@ def load_all():
             low_memory=False
         )
 
+    def normalize_inep(df):
+        df.columns = df.columns.str.strip()
+        for col in df.columns:
+            if col.upper() in ["INEP", "CODIGO INEP", "CÓDIGO INEP", "COD_INEP", "CODIGO_INEP"]:
+                df = df.rename(columns={col: "CODIGO_INEP"})
+                break
+        return df
+
     # ── Escolas principal ────────────────────────────────────
-    # Nome do arquivo pode variar (algumas cópias tinham o prefixo "Cópia de ").
-    # Tenta o nome sem o prefixo por padrão.
     escolas = read("ESCOLAS 2026 - ESCOLAS.csv")
-    escolas.columns = escolas.columns.str.strip()
+    escolas = normalize_inep(escolas)
     
     # Renomeia para evitar conflito com a coluna de matrículas do GEDRA
     escolas = escolas.rename(columns={"ENSINO MÉDIO": "ENSINO_MÉDIO_OFERTA"})
@@ -352,8 +358,7 @@ def load_all():
 
     # ── Gestão ───────────────────────────────────────────────
     gestao = read("ESCOLAS 2026 - ACOMPANHAMENTO - GESTÃO.csv")
-    gestao.columns = gestao.columns.str.strip()
-    gestao = gestao.rename(columns={"INEP": "CODIGO_INEP"})
+    gestao = normalize_inep(gestao)
     gestao["CODIGO_INEP"] = pd.to_numeric(gestao["CODIGO_INEP"], errors="coerce")
     gestao = gestao.dropna(subset=["CODIGO_INEP"])
     gestao["CODIGO_INEP"] = gestao["CODIGO_INEP"].astype(int)
@@ -364,7 +369,7 @@ def load_all():
 
     # ── Contatos ─────────────────────────────────────────────
     contatos = read("ESCOLAS 2026 - CONTATOS.csv")
-    contatos.columns = contatos.columns.str.strip()
+    contatos = normalize_inep(contatos)
     contatos["CODIGO_INEP"] = pd.to_numeric(
         contatos["CODIGO_INEP"], errors="coerce"
     )
@@ -373,7 +378,7 @@ def load_all():
 
     # ── ECI/ECIT (base maior de matrículas) ─────────────────
     eci = read("ESCOLAS 2026 - ECI_ECIT.csv")
-    eci.columns = eci.columns.str.strip()
+    eci = normalize_inep(eci)
     eci["CODIGO_INEP"] = pd.to_numeric(eci["CODIGO_INEP"], errors="coerce")
     eci = eci.dropna(subset=["CODIGO_INEP"])
     eci["CODIGO_INEP"] = eci["CODIGO_INEP"].astype(int)
@@ -387,8 +392,7 @@ def load_all():
 
     # ── Escolas do Amanhã ────────────────────────────────────
     amanha = read("ESCOLAS 2026 - ESCOLAS DO AMANHÃ.csv")
-    amanha.columns = amanha.columns.str.strip()
-    amanha = amanha.rename(columns={"INEP": "CODIGO_INEP"})
+    amanha = normalize_inep(amanha)
     amanha["CODIGO_INEP"] = pd.to_numeric(amanha["CODIGO_INEP"], errors="coerce")
     amanha = amanha.dropna(subset=["CODIGO_INEP"])
     amanha["CODIGO_INEP"] = amanha["CODIGO_INEP"].astype(int)
@@ -396,7 +400,7 @@ def load_all():
 
     # ── Matrículas GEDRA ─────────────────────────────────────
     matriculas = read("ESCOLAS 2026 - MATRICULAS- GEDRA 09_06_2026.csv")
-    matriculas.columns = matriculas.columns.str.strip()
+    matriculas = normalize_inep(matriculas)
     matriculas["CODIGO_INEP"] = pd.to_numeric(
         matriculas["CODIGO_INEP"], errors="coerce"
     )
