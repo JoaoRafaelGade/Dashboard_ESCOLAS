@@ -316,17 +316,19 @@ def load_all():
             low_memory=False
         )
 
-    def normalize_inep(df):
+    def normalize_columns(df):
         df.columns = df.columns.str.strip()
-        for col in df.columns:
-            if col.upper() in ["INEP", "CODIGO INEP", "CÓDIGO INEP", "COD_INEP", "CODIGO_INEP"]:
+        for col in list(df.columns):
+            u = col.upper().strip()
+            if u in ["INEP", "CODIGO INEP", "CÓDIGO INEP", "COD_INEP", "CODIGO_INEP"]:
                 df = df.rename(columns={col: "CODIGO_INEP"})
-                break
+            elif u in ["TOTAL DE MATRÍCULAS", "TOTAL DE MATRICULAS", "TOTAL_MATRICULAS", "TOTAL_MAT", "MATRICULAS_TOTAL", "TOTAL MATRICULAS"]:
+                df = df.rename(columns={col: "TOTAL"})
         return df
 
     # ── Escolas principal ────────────────────────────────────
     escolas = read("ESCOLAS 2026 - ESCOLAS.csv")
-    escolas = normalize_inep(escolas)
+    escolas = normalize_columns(escolas)
     
     # Renomeia para evitar conflito com a coluna de matrículas do GEDRA
     escolas = escolas.rename(columns={"ENSINO MÉDIO": "ENSINO_MÉDIO_OFERTA"})
@@ -350,7 +352,6 @@ def load_all():
     for c in ideb_cols:
         escolas[c] = pd.to_numeric(escolas[c].astype(str).str.replace(",", "."), errors="coerce")
 
-    # Resgatando a coluna renomeada nos IDEB cols se necessário (aqui não se aplica, mas é bom deixar limpo)
     # Ano implantação
     escolas["Ano de Implatação"] = pd.to_numeric(
         escolas["Ano de Implatação"], errors="coerce"
@@ -358,7 +359,7 @@ def load_all():
 
     # ── Gestão ───────────────────────────────────────────────
     gestao = read("ESCOLAS 2026 - ACOMPANHAMENTO - GESTÃO.csv")
-    gestao = normalize_inep(gestao)
+    gestao = normalize_columns(gestao)
     gestao["CODIGO_INEP"] = pd.to_numeric(gestao["CODIGO_INEP"], errors="coerce")
     gestao = gestao.dropna(subset=["CODIGO_INEP"])
     gestao["CODIGO_INEP"] = gestao["CODIGO_INEP"].astype(int)
@@ -369,7 +370,7 @@ def load_all():
 
     # ── Contatos ─────────────────────────────────────────────
     contatos = read("ESCOLAS 2026 - CONTATOS.csv")
-    contatos = normalize_inep(contatos)
+    contatos = normalize_columns(contatos)
     contatos["CODIGO_INEP"] = pd.to_numeric(
         contatos["CODIGO_INEP"], errors="coerce"
     )
@@ -378,7 +379,7 @@ def load_all():
 
     # ── ECI/ECIT (base maior de matrículas) ─────────────────
     eci = read("ESCOLAS 2026 - ECI_ECIT.csv")
-    eci = normalize_inep(eci)
+    eci = normalize_columns(eci)
     eci["CODIGO_INEP"] = pd.to_numeric(eci["CODIGO_INEP"], errors="coerce")
     eci = eci.dropna(subset=["CODIGO_INEP"])
     eci["CODIGO_INEP"] = eci["CODIGO_INEP"].astype(int)
@@ -388,11 +389,14 @@ def load_all():
     for c in num_cols_eci:
         if c in eci.columns:
             eci[c] = pd.to_numeric(eci[c], errors="coerce")
-    eci["TOTAL"] = pd.to_numeric(eci["TOTAL"], errors="coerce")
+    if "TOTAL" in eci.columns:
+        eci["TOTAL"] = pd.to_numeric(eci["TOTAL"], errors="coerce")
+    else:
+        eci["TOTAL"] = 0
 
     # ── Escolas do Amanhã ────────────────────────────────────
     amanha = read("ESCOLAS 2026 - ESCOLAS DO AMANHÃ.csv")
-    amanha = normalize_inep(amanha)
+    amanha = normalize_columns(amanha)
     amanha["CODIGO_INEP"] = pd.to_numeric(amanha["CODIGO_INEP"], errors="coerce")
     amanha = amanha.dropna(subset=["CODIGO_INEP"])
     amanha["CODIGO_INEP"] = amanha["CODIGO_INEP"].astype(int)
@@ -400,7 +404,7 @@ def load_all():
 
     # ── Matrículas GEDRA ─────────────────────────────────────
     matriculas = read("ESCOLAS 2026 - MATRICULAS- GEDRA 09_06_2026.csv")
-    matriculas = normalize_inep(matriculas)
+    matriculas = normalize_columns(matriculas)
     matriculas["CODIGO_INEP"] = pd.to_numeric(
         matriculas["CODIGO_INEP"], errors="coerce"
     )
@@ -414,6 +418,19 @@ def load_all():
     for c in num_cols_mat:
         if c in matriculas.columns:
             matriculas[c] = pd.to_numeric(matriculas[c], errors="coerce")
+
+    # Garantir que a coluna TOTAL exista em matriculas
+    if "TOTAL" not in matriculas.columns:
+        sum_cols = [c for c in num_cols_mat if c in matriculas.columns and c != "TOTAL"]
+        if sum_cols:
+            matriculas["TOTAL"] = matriculas[sum_cols].sum(axis=1)
+        else:
+            matriculas["TOTAL"] = 0
+    else:
+        sum_cols = [c for c in num_cols_mat if c in matriculas.columns and c != "TOTAL"]
+        if sum_cols:
+            calc_tot = matriculas[sum_cols].sum(axis=1)
+            matriculas["TOTAL"] = matriculas["TOTAL"].fillna(calc_tot)
 
     # ── Merge principal: escolas + gestão ────────────────────
     escolas_full = escolas.merge(
@@ -430,6 +447,11 @@ def load_all():
         matriculas[cols_to_merge],
         on="CODIGO_INEP", how="left"
     )
+
+    if "TOTAL" not in escolas_mat.columns:
+        escolas_mat["TOTAL"] = 0
+    else:
+        escolas_mat["TOTAL"] = pd.to_numeric(escolas_mat["TOTAL"], errors="coerce").fillna(0)
 
     return {
         "escolas":     escolas,
@@ -679,7 +701,7 @@ if pagina.startswith("🏠"):
 
     # ── KPIs ─────────────────────────────────────────────────
     total_escolas = len(df_esc)
-    total_mat     = df_esc_mat["TOTAL"].sum()
+    total_mat     = df_esc_mat["TOTAL"].sum() if "TOTAL" in df_esc_mat.columns else 0
     total_munic   = df_esc["MUNICIPIO"].nunique()
     total_gre     = df_esc["GRE"].nunique()
     pct_presencial = (
@@ -687,9 +709,9 @@ if pagina.startswith("🏠"):
         .str.contains("Presencial", na=False).mean() * 100
     ) if len(df_esc_full) > 0 else 0.0
     pct_mec = (df_esc["MEC"] == "Sim").mean() * 100 if len(df_esc) > 0 else 0.0
-    total_ai = df_esc_mat["ENSINO FUNDAMENTAL (ANOS INICIAIS)"].sum()
-    total_af = df_esc_mat["ENSINO FUNDAMENTAL (ANOS FINAIS)"].sum()
-    total_em = df_esc_mat["ENSINO MÉDIO"].sum()
+    total_ai = df_esc_mat["ENSINO FUNDAMENTAL (ANOS INICIAIS)"].sum() if "ENSINO FUNDAMENTAL (ANOS INICIAIS)" in df_esc_mat.columns else 0
+    total_af = df_esc_mat["ENSINO FUNDAMENTAL (ANOS FINAIS)"].sum() if "ENSINO FUNDAMENTAL (ANOS FINAIS)" in df_esc_mat.columns else 0
+    total_em = df_esc_mat["ENSINO MÉDIO"].sum() if "ENSINO MÉDIO" in df_esc_mat.columns else 0
 
     c1, c2, c3, c4 = st.columns(4)
     with c1: kpi("Total de Escolas", fmt_num(total_escolas), "ECIs/ECITs", icon="🏫")
