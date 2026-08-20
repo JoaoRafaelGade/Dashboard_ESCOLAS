@@ -324,6 +324,8 @@ def load_all():
                 df = df.rename(columns={col: "CODIGO_INEP"})
             elif u in ["TOTAL DE MATRÍCULAS", "TOTAL DE MATRICULAS", "TOTAL_MATRICULAS", "TOTAL_MAT", "MATRICULAS_TOTAL", "TOTAL MATRICULAS"]:
                 df = df.rename(columns={col: "TOTAL"})
+            elif u in ["GERENCIA", "GERÊNCIA", "GERENCIA REGIONAL", "GRE REGIONAL", "REGIONAL DE ENSINO"]:
+                df = df.rename(columns={col: "GRE"})
         return df
 
     # ── Escolas principal ────────────────────────────────────
@@ -442,11 +444,15 @@ def load_all():
     )
 
     # ── Merge: escolas_full + matriculas GEDRA ───────────────
-    cols_to_merge = [c for c in matriculas.columns if c != "NOME_ESCOLA"]
+    # Evita conflitos de colunas repetidas (ex: GRE, MUNICIPIO, TIPO) entre escolas_full e matriculas
+    cols_to_merge = [c for c in matriculas.columns if c == "CODIGO_INEP" or c not in escolas_full.columns]
     escolas_mat = escolas_full.merge(
         matriculas[cols_to_merge],
         on="CODIGO_INEP", how="left"
     )
+
+    if "GRE" not in escolas_mat.columns and "GRE_x" in escolas_mat.columns:
+        escolas_mat["GRE"] = escolas_mat["GRE_x"]
 
     if "TOTAL" not in escolas_mat.columns:
         escolas_mat["TOTAL"] = 0
@@ -828,33 +834,46 @@ if pagina.startswith("🏠"):
 
     with col_b:
         section("📊 Matrículas por Segmento e GRE")
-        mat_gre = df_esc_mat.groupby("GRE").agg(
-            AI=("ENSINO FUNDAMENTAL (ANOS INICIAIS)", "sum"),
-            AF=("ENSINO FUNDAMENTAL (ANOS FINAIS)", "sum"),
-            EM=("ENSINO MÉDIO", "sum"),
-        ).reset_index().sort_values("EM", ascending=False)
-        mat_long = mat_gre.melt(
-            id_vars="GRE",
-            value_vars=["AI","AF","EM"],
-            var_name="Segmento",
-            value_name="Matrículas"
-        )
-        seg_map = {"AI": "Anos Iniciais", "AF": "Anos Finais", "EM": "Ensino Médio"}
-        mat_long["Segmento"] = mat_long["Segmento"].map(seg_map)
-        fig5 = px.bar(
-            mat_long, x="GRE", y="Matrículas",
-            color="Segmento",
-            color_discrete_map={
-                "Anos Iniciais": AZUL2,
-                "Anos Finais":   AZUL,
-                "Ensino Médio":  AMARELO,
-            },
-            barmode="stack",
-            title="Matrículas por GRE e segmento",
-        )
-        fig5.update_traces(marker_line_width=0)
-        plotly_defaults(fig5, height=360)
-        st.plotly_chart(fig5, use_container_width=True)
+        if "GRE" in df_esc_mat.columns and len(df_esc_mat) > 0:
+            agg_dict = {}
+            for col, seg_name in [("ENSINO FUNDAMENTAL (ANOS INICIAIS)", "AI"), 
+                                  ("ENSINO FUNDAMENTAL (ANOS FINAIS)", "AF"), 
+                                  ("ENSINO MÉDIO", "EM")]:
+                if col in df_esc_mat.columns:
+                    agg_dict[seg_name] = (col, "sum")
+            
+            if agg_dict:
+                mat_gre = df_esc_mat.groupby("GRE").agg(**agg_dict).reset_index()
+                if "EM" in mat_gre.columns:
+                    mat_gre = mat_gre.sort_values("EM", ascending=False)
+                
+                value_vars = [c for c in ["AI", "AF", "EM"] if c in mat_gre.columns]
+                mat_long = mat_gre.melt(
+                    id_vars="GRE",
+                    value_vars=value_vars,
+                    var_name="Segmento",
+                    value_name="Matrículas"
+                )
+                seg_map = {"AI": "Anos Iniciais", "AF": "Anos Finais", "EM": "Ensino Médio"}
+                mat_long["Segmento"] = mat_long["Segmento"].map(seg_map)
+                fig5 = px.bar(
+                    mat_long, x="GRE", y="Matrículas",
+                    color="Segmento",
+                    color_discrete_map={
+                        "Anos Iniciais": AZUL2,
+                        "Anos Finais":   AZUL,
+                        "Ensino Médio":  AMARELO,
+                    },
+                    barmode="stack",
+                    title="Matrículas por GRE e segmento",
+                )
+                fig5.update_traces(marker_line_width=0)
+                plotly_defaults(fig5, height=360)
+                st.plotly_chart(fig5, use_container_width=True)
+            else:
+                st.info("Dados de matrículas por segmento indisponíveis.")
+        else:
+            st.info("Dados por GRE indisponíveis para os filtros atuais.")
 
     divider()
 
