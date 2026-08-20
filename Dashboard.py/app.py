@@ -336,10 +336,14 @@ def load_all():
 
     # ── Escolas principal ────────────────────────────────────
     escolas = read("ESCOLAS 2026 - ESCOLAS.csv")
-    escolas = normalize_columns(escolas)
+    escolas.columns = escolas.columns.str.strip()
     
-    # Renomeia para evitar conflito com a coluna de matrículas do GEDRA
-    escolas = escolas.rename(columns={"ENSINO MÉDIO": "ENSINO_MÉDIO_OFERTA"})
+    # Renomeia colunas de oferta da tabela de escolas para evitar conflito com os valores numéricos de matrículas
+    escolas = escolas.rename(columns={
+        "ANOS INICIAIS": "OFERTA_ANOS_INICIAIS",
+        "ANOS FINAIS": "OFERTA_ANOS_FINAIS",
+        "ENSINO MÉDIO": "OFERTA_ENSINO_MÉDIO"
+    })
     
     escolas["CODIGO_INEP"] = pd.to_numeric(escolas["CODIGO_INEP"], errors="coerce")
     escolas = escolas.dropna(subset=["CODIGO_INEP"]).copy()
@@ -367,7 +371,8 @@ def load_all():
 
     # ── Gestão ───────────────────────────────────────────────
     gestao = read("ESCOLAS 2026 - ACOMPANHAMENTO - GESTÃO.csv")
-    gestao = normalize_columns(gestao)
+    gestao.columns = gestao.columns.str.strip()
+    gestao = gestao.rename(columns={"INEP": "CODIGO_INEP"})
     gestao["CODIGO_INEP"] = pd.to_numeric(gestao["CODIGO_INEP"], errors="coerce")
     gestao = gestao.dropna(subset=["CODIGO_INEP"])
     gestao["CODIGO_INEP"] = gestao["CODIGO_INEP"].astype(int)
@@ -378,33 +383,37 @@ def load_all():
 
     # ── Contatos ─────────────────────────────────────────────
     contatos = read("ESCOLAS 2026 - CONTATOS.csv")
-    contatos = normalize_columns(contatos)
+    contatos.columns = contatos.columns.str.strip()
     contatos["CODIGO_INEP"] = pd.to_numeric(
         contatos["CODIGO_INEP"], errors="coerce"
     )
     contatos = contatos.dropna(subset=["CODIGO_INEP"])
     contatos["CODIGO_INEP"] = contatos["CODIGO_INEP"].astype(int)
 
-    # ── ECI/ECIT (base maior de matrículas) ─────────────────
+    # ── ECI/ECIT (base de matrículas por série) ───────────────
     eci = read("ESCOLAS 2026 - ECI_ECIT.csv")
-    eci = normalize_columns(eci)
+    eci.columns = eci.columns.str.strip()
     eci["CODIGO_INEP"] = pd.to_numeric(eci["CODIGO_INEP"], errors="coerce")
     eci = eci.dropna(subset=["CODIGO_INEP"])
     eci["CODIGO_INEP"] = eci["CODIGO_INEP"].astype(int)
-    num_cols_eci = ["1º ANO","2º ANO","3º ANO","4º ANO","5º ANO",
-                    "6º ANO","7º ANO","8º ANO","9º ANO",
-                    "1ª SÉRIE","2ª SÉRIE","3ª SÉRIE"]
-    for c in num_cols_eci:
+
+    ai_cols = ["1º ANO", "2º ANO", "3º ANO", "4º ANO", "5º ANO"]
+    af_cols = ["6º ANO", "7º ANO", "8º ANO", "9º ANO"]
+    em_cols = ["1ª SÉRIE", "2ª SÉRIE", "3ª SÉRIE"]
+
+    for c in ai_cols + af_cols + em_cols:
         if c in eci.columns:
-            eci[c] = pd.to_numeric(eci[c], errors="coerce")
-    if "TOTAL" in eci.columns:
-        eci["TOTAL"] = pd.to_numeric(eci["TOTAL"], errors="coerce")
-    else:
-        eci["TOTAL"] = 0
+            eci[c] = pd.to_numeric(eci[c], errors="coerce").fillna(0)
+
+    eci["ENSINO FUNDAMENTAL (ANOS INICIAIS)"] = eci[[c for c in ai_cols if c in eci.columns]].sum(axis=1)
+    eci["ENSINO FUNDAMENTAL (ANOS FINAIS)"]   = eci[[c for c in af_cols if c in eci.columns]].sum(axis=1)
+    eci["ENSINO MÉDIO"]                        = eci[[c for c in em_cols if c in eci.columns]].sum(axis=1)
+    eci["TOTAL"]                               = eci["ENSINO FUNDAMENTAL (ANOS INICIAIS)"] + eci["ENSINO FUNDAMENTAL (ANOS FINAIS)"] + eci["ENSINO MÉDIO"]
 
     # ── Escolas do Amanhã ────────────────────────────────────
     amanha = read("ESCOLAS 2026 - ESCOLAS DO AMANHÃ.csv")
-    amanha = normalize_columns(amanha)
+    amanha.columns = amanha.columns.str.strip()
+    amanha = amanha.rename(columns={"INEP": "CODIGO_INEP"})
     amanha["CODIGO_INEP"] = pd.to_numeric(amanha["CODIGO_INEP"], errors="coerce")
     amanha = amanha.dropna(subset=["CODIGO_INEP"])
     amanha["CODIGO_INEP"] = amanha["CODIGO_INEP"].astype(int)
@@ -412,33 +421,7 @@ def load_all():
 
     # ── Matrículas GEDRA ─────────────────────────────────────
     matriculas = read("ESCOLAS 2026 - MATRICULAS- GEDRA 09_06_2026.csv")
-    matriculas = normalize_columns(matriculas)
-    matriculas["CODIGO_INEP"] = pd.to_numeric(
-        matriculas["CODIGO_INEP"], errors="coerce"
-    )
-    matriculas = matriculas.dropna(subset=["CODIGO_INEP"])
-    matriculas["CODIGO_INEP"] = matriculas["CODIGO_INEP"].astype(int)
-    num_cols_mat = ["1º ANO","2º ANO","3º ANO","4º ANO","5º ANO",
-                    "6º ANO","7º ANO","8º ANO","9º ANO",
-                    "1ª SÉRIE","2ª SÉRIE","3ª SÉRIE",
-                    "ENSINO FUNDAMENTAL (ANOS INICIAIS)",
-                    "ENSINO FUNDAMENTAL (ANOS FINAIS)","ENSINO MÉDIO","TOTAL"]
-    for c in num_cols_mat:
-        if c in matriculas.columns:
-            matriculas[c] = pd.to_numeric(matriculas[c], errors="coerce")
-
-    # Garantir que a coluna TOTAL exista em matriculas
-    if "TOTAL" not in matriculas.columns:
-        sum_cols = [c for c in num_cols_mat if c in matriculas.columns and c != "TOTAL"]
-        if sum_cols:
-            matriculas["TOTAL"] = matriculas[sum_cols].sum(axis=1)
-        else:
-            matriculas["TOTAL"] = 0
-    else:
-        sum_cols = [c for c in num_cols_mat if c in matriculas.columns and c != "TOTAL"]
-        if sum_cols:
-            calc_tot = matriculas[sum_cols].sum(axis=1)
-            matriculas["TOTAL"] = matriculas["TOTAL"].fillna(calc_tot)
+    matriculas.columns = matriculas.columns.str.strip()
 
     # ── Merge principal: escolas + gestão ────────────────────
     escolas_full = escolas.merge(
@@ -449,21 +432,15 @@ def load_all():
         on="CODIGO_INEP", how="left"
     )
 
-    # ── Merge: escolas_full + matriculas GEDRA ───────────────
-    # Evita conflitos de colunas repetidas (ex: GRE, MUNICIPIO, TIPO) entre escolas_full e matriculas
-    cols_to_merge = [c for c in matriculas.columns if c == "CODIGO_INEP" or c not in escolas_full.columns]
+    # ── Merge: escolas_full + matrículas do ECI_ECIT ─────────
+    mat_cols = ["CODIGO_INEP", "ENSINO FUNDAMENTAL (ANOS INICIAIS)", "ENSINO FUNDAMENTAL (ANOS FINAIS)", "ENSINO MÉDIO", "TOTAL"] + ai_cols + af_cols + em_cols
+    valid_mat_cols = [c for c in mat_cols if c in eci.columns]
     escolas_mat = escolas_full.merge(
-        matriculas[cols_to_merge],
+        eci[valid_mat_cols],
         on="CODIGO_INEP", how="left"
     )
 
-    if "GRE" not in escolas_mat.columns and "GRE_x" in escolas_mat.columns:
-        escolas_mat["GRE"] = escolas_mat["GRE_x"]
-
-    if "TOTAL" not in escolas_mat.columns:
-        escolas_mat["TOTAL"] = 0
-    else:
-        escolas_mat["TOTAL"] = pd.to_numeric(escolas_mat["TOTAL"], errors="coerce").fillna(0)
+    escolas_mat["TOTAL"] = pd.to_numeric(escolas_mat["TOTAL"], errors="coerce").fillna(0)
 
     return {
         "escolas":     escolas,
