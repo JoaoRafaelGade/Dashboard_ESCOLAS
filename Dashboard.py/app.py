@@ -872,28 +872,33 @@ if pagina.startswith("🏠"):
     )
 
     if len(map_df) > 0:
-        fig_map = px.scatter_mapbox(
-            map_df,
-            lat="LAT", lon="LON",
-            hover_name="NOME_ESCOLA",
-            hover_data={
-                "LAT": False, "LON": False,
-                "GRE": True, "MUNICIPIO": True,
-                "TIPO": True, "TOTAL_MAT": True,
-            },
-            color="GRE",
-            size="TOTAL_MAT",
-            size_max=20,
-            zoom=6.5,
-            center={"lat": -7.2, "lon": -36.8},
-            mapbox_style="carto-positron",
-            title="",
-            color_discrete_sequence=px.colors.qualitative.Bold,
-            opacity=0.8,
-        )
-        plotly_defaults(fig_map, height=500)
-        fig_map.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-        st.plotly_chart(fig_map, use_container_width=True)
+        map_fn = getattr(px, "scatter_map", None) or getattr(px, "scatter_mapbox", None)
+        if map_fn:
+            style_kw = "map_style" if map_fn.__name__ == "scatter_map" else "mapbox_style"
+            kwargs = {
+                "lat": "LAT",
+                "lon": "LON",
+                "hover_name": "NOME_ESCOLA",
+                "hover_data": {
+                    "LAT": False, "LON": False,
+                    "GRE": True, "MUNICIPIO": True,
+                    "TIPO": True, "TOTAL_MAT": True,
+                },
+                "color": "GRE",
+                "size": "TOTAL_MAT",
+                "size_max": 20,
+                "zoom": 6.5,
+                "center": {"lat": -7.2, "lon": -36.8},
+                style_kw: "carto-positron",
+                "color_discrete_sequence": px.colors.qualitative.Bold,
+                "opacity": 0.8,
+            }
+            fig_map = map_fn(map_df, **kwargs)
+            plotly_defaults(fig_map, height=500)
+            fig_map.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+            st.plotly_chart(fig_map, use_container_width=True)
+        else:
+            st.info("Visualização de mapa indisponível para esta versão da biblioteca Plotly.")
     else:
         st.info("Dados de coordenadas não disponíveis para o mapa.")
 
